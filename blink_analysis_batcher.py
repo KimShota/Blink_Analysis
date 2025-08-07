@@ -60,7 +60,7 @@ def analyze_blink_file(filepath):
     #Handle weird csv file 
     if len(blinks) > 75: 
         raise ValueError('Total blinks exceeded human capability. File being skipped')
-    elif len(blinks) <= 1: 
+    elif len(blinks) <= 2: 
         raise ValueError('Total blinks are too small that humans cannot achieve')
     
     blink_starts = [blink[0] for blink in blinks] #create a new list with the first item of blinks 
