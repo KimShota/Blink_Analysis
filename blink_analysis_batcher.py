@@ -13,9 +13,6 @@ def parse_blink_column(series):
 def parse_cellID_column(series):  
     return series.str.extract(r'(\d+)').astype(float).squeeze();
 
-def parse_frameId_column(series):
-    return series.str.replace("frameId", "", regex=False).astype(int)
-
 #main function 
 def analyze_blink_file(filepath): 
     df = pd.read_csv(filepath)
@@ -32,23 +29,40 @@ def analyze_blink_file(filepath):
     blink_during = False
     blink_start = None
 
+    minimum_blink_interval = 0.25
+    last_blink_end = -np.inf
+
     for _, row in df.iterrows(): 
         blinking = row['Leftblink'] == 1 or row['Rightblink'] == 1
+
         if blinking and not blink_during: 
-            blink_start = row['Timestamp']
-            blink_during = True
+            potential_start = row['Timestamp']
+            if potential_start - last_blink_end >= 0.25: 
+                blink_start = potential_start
+                blink_during = True
         elif not blinking and blink_during: 
             blink_end = row['Timestamp']
-            if blink_end > blink_start: 
+            duration = blink_end - blink_start
+            if blink_end > blink_start and 0.08 < duration < 1.0: 
                 blinks.append((blink_start, blink_end))
+                last_blink_end = blink_end
+            # else: 
+            #     print(f'We have skipped this blink due to abnormal blink duration of {duration:.2f}s')
             blink_during = False
     
     #If the data frame ends while blinking
     if blink_during:
         blink_end = df.iloc[-1]['Timestamp']
-        if blink_end > blink_start: 
+        duration = blink_end - blink_start
+        if blink_end > blink_start and 0.08 < duration < 1.0: 
             blinks.append((blink_start, blink_end))
 
+    #Handle weird csv file 
+    if len(blinks) > 75: 
+        raise ValueError('Total blinks exceeded human capability. File being skipped')
+    elif len(blinks) <= 1: 
+        raise ValueError('Total blinks are too small that humans cannot achieve')
+    
     blink_starts = [blink[0] for blink in blinks] #create a new list with the first item of blinks 
     blink_durations = [(end - start) for start, end in blinks] #create a new list of blink duration
 
@@ -67,7 +81,7 @@ def analyze_blink_file(filepath):
             
         else: 
             blink_frameIDs.append(-1)
-    
+
     earlyStage = [1 for frameID in blink_frameIDs if frameID in [0, 1]]
     midStage = [1 for frameID in blink_frameIDs if frameID == 2]
     lateStage = [1 for frameID in blink_frameIDs if frameID in [3, 4]]
@@ -76,7 +90,7 @@ def analyze_blink_file(filepath):
     burst_count = 0
     for i in range(len(blink_starts)): 
         curr = blink_starts[i]
-        bursts = [start for start in blink_starts if curr <= start < curr + 5]
+        bursts = [start for start in blink_starts if curr <= start < curr + 3]
         if len(bursts) >= 3: 
             burst_count += 1
     
@@ -97,6 +111,12 @@ def analyze_blink_file(filepath):
     for start, end in blinks:  #for each pair 
         grid = df[(df['Timestamp'] >= start) & (df['Timestamp'] <= end)]['cellID'].dropna().unique()
         grid_Counts.append(grid.shape[0])
+
+    # #scoring
+    # count = 0
+    # if earlyStage >= midStage and earlyStage >= lateStage: 
+    #     count += 1; 
+    # if 
     
     #output everything 
     return {
